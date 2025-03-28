@@ -26,7 +26,6 @@ if user_question := st.chat_input(placeholder="소득세 관련 질문을 입력
         
     with st.spinner("답변을 생각하고 있어요..."):
         response = get_ai_response(user_question)
-        print(response)
         with st.chat_message("ai"):
             ai_message = st.write_stream(response)
             st.session_state.messages.append({"role": "ai", "content": ai_message}) 

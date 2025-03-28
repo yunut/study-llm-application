@@ -4,12 +4,15 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain.chains import create_history_aware_retriever
 from langchain_core.prompts import MessagesPlaceholder
+from langchain_core.prompts import FewShotChatMessagePromptTemplate
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
+
+from config import answer_examples
 
 store = {}
 
@@ -28,11 +31,7 @@ def get_retriever():
     retriever = database.as_retriever(search_kwargs={"k": 4})
     return retriever
 
-def get_llm(model = "gpt-4o"):
-    llm = ChatOpenAI(model=model)
-    return llm
-
-def get_rag_chain():
+def get_history_retriever():
     llm = get_llm()
     retriever = get_retriever()
     contextualize_q_system_prompt = (
@@ -50,28 +49,53 @@ def get_rag_chain():
             ("human", "{input}"),
         ]
     )
-    
+
     history_aware_retriever = create_history_aware_retriever(
         llm, retriever, contextualize_q_prompt
     )
+    return history_aware_retriever
+
+def get_llm(model = "gpt-4o"):
+    llm = ChatOpenAI(model=model)
+    return llm
+
+def get_rag_chain():
+    llm = get_llm()
+
+    example_prompt = ChatPromptTemplate.from_messages(
+        [
+            ("human", "{input}"),
+            ("ai", "{answer}"),
+        ]
+    )
+    few_shot_prompt = FewShotChatMessagePromptTemplate(
+        example_prompt=example_prompt,
+        examples=answer_examples,
+    )
+    
 
     system_prompt = (
-        "You are an assistant for question-answering tasks. "
-        "Use the following pieces of retrieved context to answer "
-        "the question. If you don't know the answer, say that you "
-        "don't know. Use three sentences maximum and keep the "
-        "answer concise."
+        "당신은 소득세법 전문가입니다. 사용자의 소득세법에 관한 질문에 답변해주세요"
+        "아래에 제공된 문서를 활용해서 답변해주시고"
+        "답변을 알 수 없다면 모른다고 답변해주세요"
+        "답변을 제공할 때는 소득세법 (XX조)에 따르면 이라고 시작하면서 답변해주시고"
+        "2-3 문장정도의 짧은 내용의 답변을 원합니다"
         "\n\n"
         "{context}"
     )
+
+    # few shot prompt를 사용해 대화 히스토리를 활용해 더 정확한 답변을 제공합니다.
+    # 토큰이 많이 소비되기 때문에, 점진적으로 증가시켜서 만족스러운 답변이 나올때까지 조절
     qa_prompt = ChatPromptTemplate.from_messages(
         [
             ("system", system_prompt),
+            few_shot_prompt,
             MessagesPlaceholder("chat_history"),
             ("human", "{input}"),
         ]
     )
     question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
+    history_aware_retriever = get_history_retriever()
 
     rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
 
