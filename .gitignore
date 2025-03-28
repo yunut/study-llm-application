@@ -10,3 +10,5 @@ share/
 pyvenv.cfg
 chroma_db/
 venv310/
+
+.DS_Store
